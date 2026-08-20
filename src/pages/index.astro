@@ -1,11 +1,20 @@
 ---
 import Layout from "../layouts/Layout.astro";
-import { PADS, padColor } from "../scripts/pads";
+import { PADS, padColor, SEQ_SOUNDS } from "../scripts/pads";
+
+const DECKS = ["a", "b"] as const;
+const SEQ_STEPS = 16;
+const DEFAULT_PATTERN: Record<"kick" | "snare" | "hat", number[]> = {
+  kick: [0, 4, 8, 12],
+  snare: [4, 12],
+  hat: [0, 2, 4, 6, 8, 10, 12, 14],
+};
+const SEQ_ROWS = ["kick", "snare", "hat"] as const;
 ---
 
 <Layout
   title="Rainbow DJ"
-  description="A browser DJ set — a jog platter, a mixer with volume/pitch/cue, a beat machine, a recorder, and twelve coloured pads of live synthesised sound."
+  description="A browser DJ set — two decks with jog platters and FX, a crossfader, an editable step sequencer, a recorder, and twelve coloured pads of live synthesised sound per deck."
 >
   <header>
     <nav aria-label="Primary">
@@ -15,96 +24,213 @@ import { PADS, padColor } from "../scripts/pads";
   <main>
     <h1>Rainbow DJ</h1>
     <p class="hint">
-      Press a pad — mouse, touch, or the number/symbol row. Spin the jog
-      wheel, dial in the pitch, ride the volume fader, record a loop and let
-      Play beat play it back. Every sound is made live, right here — no two
-      hits quite the same.
+      Deck A plays on the number/symbol row; hold <kbd>Shift</kbd> for the same
+      keys on Deck B. Spin a jog wheel, dial in filter/delay/reverb per deck,
+      ride the crossfader, tap out a pattern on the sequencer — add tracks and
+      change what each one plays — or record a pad loop and let Play beat
+      play it back. Every sound is made live — no two hits quite the same.
     </p>
 
     <div class="cabinet">
       <canvas id="viz" width="900" height="140" aria-hidden="true"></canvas>
 
-      <div class="rack">
-        <div class="turntable-unit">
-          <button
-            type="button"
-            id="jog"
-            class="jog"
-            aria-label="Spin the jog wheel — plays a random scratch move"
-          >
-            <span class="jog-platter">
-              <span class="jog-grip"></span>
-              <span class="jog-marker"></span>
-              <span class="jog-hub">JOG</span>
-            </span>
-          </button>
-          <p class="unit-caption">Jog wheel — scratch it</p>
-        </div>
+      <div class="decks">
+        {
+          DECKS.map((id) => (
+            <section class="deck-unit" style={`order: ${id === "a" ? 1 : 3};`} aria-label={`Deck ${id.toUpperCase()}`}>
+              <div class="turntable-unit">
+                <button
+                  type="button"
+                  id={`jog-${id}`}
+                  class="jog"
+                  aria-label={`Deck ${id.toUpperCase()} jog wheel — plays a random scratch move`}
+                >
+                  <span class="jog-platter">
+                    <span class="jog-grip" />
+                    <span class="jog-marker" />
+                    <span class="jog-hub">{id.toUpperCase()}</span>
+                  </span>
+                </button>
+                <p class="unit-caption">Deck {id.toUpperCase()} — scratch it</p>
+              </div>
 
-        <div class="deck" id="deck" role="group" aria-label="DJ pads">
-          {
-            PADS.map((pad) => (
-              <button
-                type="button"
-                class="pad"
-                data-sound={pad.id}
-                data-key={pad.key}
-                style={`--pad: ${padColor(pad.hue)};`}
-              >
-                <span class="label">{pad.label}</span>
-                <span class="key">{pad.key}</span>
-              </button>
-            ))
-          }
+              <div class="deck" data-deck={id} role="group" aria-label={`Deck ${id.toUpperCase()} pads`}>
+                {PADS.map((pad) => (
+                  <button
+                    type="button"
+                    class="pad"
+                    data-deck={id}
+                    data-sound={pad.id}
+                    data-code={pad.code}
+                    style={`--pad: ${padColor(pad.hue)};`}
+                  >
+                    <span class="label">{pad.label}</span>
+                    <span class="key">{id === "a" ? pad.key : `⇧${pad.key}`}</span>
+                  </button>
+                ))}
+              </div>
+
+              <div class="channel-strip" role="group" aria-label={`Deck ${id.toUpperCase()} channel`}>
+                <span class="mixer-section-title">Channel {id.toUpperCase()}</span>
+                <div class="faders">
+                  <label class="fader-group">
+                    <span class="fader-label">Vol</span>
+                    <span class="fader-track">
+                      <input
+                        type="range"
+                        id={`volume-${id}`}
+                        min="0"
+                        max="1.2"
+                        step="0.01"
+                        value="0.9"
+                        aria-label={`Deck ${id.toUpperCase()} volume`}
+                      />
+                    </span>
+                  </label>
+                  <label class="fader-group">
+                    <span class="fader-label">Pitch</span>
+                    <span class="fader-track">
+                      <input
+                        type="range"
+                        id={`pitch-${id}`}
+                        min="-8"
+                        max="8"
+                        step="1"
+                        value="0"
+                        aria-label={`Deck ${id.toUpperCase()} pitch`}
+                      />
+                    </span>
+                    <span class="fader-readout" id={`pitch-label-${id}`}>+0%</span>
+                  </label>
+                  <label class="fader-group">
+                    <span class="fader-label">Filter</span>
+                    <span class="fader-track">
+                      <input
+                        type="range"
+                        id={`filter-${id}`}
+                        min="-1"
+                        max="1"
+                        step="0.01"
+                        value="0"
+                        aria-label={`Deck ${id.toUpperCase()} filter`}
+                      />
+                    </span>
+                  </label>
+                  <label class="fader-group">
+                    <span class="fader-label">Delay</span>
+                    <span class="fader-track">
+                      <input
+                        type="range"
+                        id={`delay-${id}`}
+                        min="0"
+                        max="1"
+                        step="0.01"
+                        value="0"
+                        aria-label={`Deck ${id.toUpperCase()} delay send`}
+                      />
+                    </span>
+                  </label>
+                  <label class="fader-group">
+                    <span class="fader-label">Verb</span>
+                    <span class="fader-track">
+                      <input
+                        type="range"
+                        id={`reverb-${id}`}
+                        min="0"
+                        max="1"
+                        step="0.01"
+                        value="0"
+                        aria-label={`Deck ${id.toUpperCase()} reverb send`}
+                      />
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </section>
+          ))
+        }
+
+        <div class="center-console" style="order: 2;">
+          <div class="crossfader-unit">
+            <span class="mixer-section-title">Crossfader</span>
+            <input
+              type="range"
+              id="crossfader"
+              min="0"
+              max="1"
+              step="0.01"
+              value="0.5"
+              aria-label="Crossfader between Deck A and Deck B"
+            />
+            <div class="crossfader-labels">
+              <span>A</span>
+              <span>B</span>
+            </div>
+          </div>
+
+          <div class="mixer-section">
+            <span class="mixer-section-title">Beats</span>
+            <button type="button" id="beats-btn" class="mixer-btn" aria-pressed="false">
+              <span class="led"></span>
+              <span class="btn-text">Play beat</span>
+            </button>
+            <button type="button" id="cue-btn" class="mixer-btn">
+              <span class="led led-red"></span>
+              <span>Cue</span>
+            </button>
+            <span class="bpm" id="bpm-label">128 BPM</span>
+          </div>
+
+          <div class="mixer-section">
+            <span class="mixer-section-title">Looper</span>
+            <button type="button" id="record-btn" class="mixer-btn mixer-btn-record" aria-pressed="false">
+              <span class="led led-red"></span>
+              <span class="btn-text">Record</span>
+            </button>
+            <button type="button" id="loop-play-btn" class="mixer-btn" aria-pressed="false" disabled>
+              <span class="led"></span>
+              <span>Play loop</span>
+            </button>
+            <span class="fader-readout" id="record-timer">0.0s</span>
+          </div>
         </div>
       </div>
 
-      <div class="mixer" role="group" aria-label="Mixer controls">
-        <div class="mixer-section mixer-section-channel">
-          <span class="mixer-section-title">Channel</span>
-          <div class="faders">
-            <label class="fader-group">
-              <span class="fader-label">Vol</span>
-              <span class="fader-track">
-                <input type="range" id="volume" min="0" max="1.2" step="0.01" value="0.9" aria-label="Volume" />
-              </span>
-            </label>
-            <label class="fader-group">
-              <span class="fader-label">Pitch</span>
-              <span class="fader-track">
-                <input type="range" id="pitch" min="-8" max="8" step="1" value="0" aria-label="Pitch" />
-              </span>
-              <span class="fader-readout" id="pitch-label">+0%</span>
-            </label>
-          </div>
+      <div class="sequencer" role="group" aria-label="Step sequencer">
+        <div class="seq-rows" id="seq-rows">
+          {
+            SEQ_ROWS.map((row) => (
+              <div class="seq-row">
+                <select class="seq-sound" aria-label="Track sound">
+                  {SEQ_SOUNDS.map((opt) => (
+                    <option value={opt.id} selected={opt.id === row}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <div class="seq-steps">
+                  {Array.from({ length: SEQ_STEPS }).map((_, i) => (
+                    <button
+                      type="button"
+                      class="step-btn"
+                      class:list={[{ beat: i % 4 === 0 }]}
+                      data-step={i}
+                      aria-pressed={DEFAULT_PATTERN[row].includes(i) ? "true" : "false"}
+                      aria-label={`${row} step ${i + 1}`}
+                    />
+                  ))}
+                </div>
+                <button type="button" class="seq-remove" aria-label="Remove this track">✕</button>
+              </div>
+            ))
+          }
         </div>
-
-        <div class="mixer-section">
-          <span class="mixer-section-title">Beats</span>
-          <button type="button" id="beats-btn" class="mixer-btn" aria-pressed="false">
-            <span class="led"></span>
-            <span class="btn-text">Play beat</span>
-          </button>
-          <button type="button" id="cue-btn" class="mixer-btn">
-            <span class="led led-red"></span>
-            <span>Cue</span>
-          </button>
-          <span class="bpm" id="bpm-label">128 BPM</span>
-        </div>
-
-        <div class="mixer-section">
-          <span class="mixer-section-title">Looper</span>
-          <button type="button" id="record-btn" class="mixer-btn mixer-btn-record" aria-pressed="false">
-            <span class="led led-red"></span>
-            <span class="btn-text">Record</span>
-          </button>
-          <span class="fader-readout" id="record-timer">0.0s</span>
-        </div>
+        <button type="button" id="seq-add-btn" class="seq-add-btn">+ Add track</button>
       </div>
     </div>
 
     <p class="status" id="status" role="status" aria-live="polite">
-      Tap a pad, spin the jog wheel, or start the beat.
+      Tap a pad, spin a jog wheel, or start the sequencer.
     </p>
   </main>
   <script src="../scripts/main.ts"></script>
@@ -112,7 +238,7 @@ import { PADS, padColor } from "../scripts/pads";
 
 <style>
   main {
-    max-width: 60rem;
+    max-width: 68rem;
   }
 
   .hint {
@@ -180,36 +306,46 @@ import { PADS, padColor } from "../scripts/pads";
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
   }
 
-  .rack {
+  /* --- two decks either side of a shared centre console --- */
+  .decks {
     display: grid;
-    grid-template-columns: 11rem 1fr;
+    grid-template-columns: 1fr 12rem 1fr;
     gap: 1.25rem;
     align-items: stretch;
   }
 
-  @media (max-width: 40rem) {
-    .rack {
+  @media (max-width: 64rem) {
+    .decks {
       grid-template-columns: 1fr;
     }
   }
 
-  /* --- jog platter (CDJ-style, no tonearm) --- */
-  .turntable-unit {
+  .deck-unit {
     display: flex;
     flex-direction: column;
+    gap: 1rem;
+    padding: 1rem;
+    border-radius: 0.9rem;
+    background: linear-gradient(180deg, #1c1c22, #131316);
+    border: 1px solid #000;
+  }
+
+  .turntable-unit {
+    display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.9rem;
   }
 
   .jog {
     position: relative;
-    width: 100%;
+    width: 5.5rem;
     aspect-ratio: 1;
+    flex: none;
     border-radius: 50%;
     border: 3px solid #444;
     background: radial-gradient(circle at 35% 30%, #555, #1a1a1c 65%);
     box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
-    padding: 0.6rem;
+    padding: 0.4rem;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -322,23 +458,23 @@ import { PADS, padColor } from "../scripts/pads";
   .deck {
     display: grid;
     grid-template-columns: repeat(6, 1fr);
-    gap: 0.65rem;
+    gap: 0.5rem;
     align-content: start;
   }
 
-  @media (max-width: 56rem) {
+  @media (max-width: 78rem) {
     .deck {
       grid-template-columns: repeat(4, 1fr);
     }
   }
 
-  @media (max-width: 34rem) {
+  @media (max-width: 30rem) {
     .deck {
       grid-template-columns: repeat(3, 1fr);
     }
   }
 
-  @media (max-width: 22rem) {
+  @media (max-width: 20rem) {
     .deck {
       grid-template-columns: repeat(2, 1fr);
     }
@@ -349,7 +485,7 @@ import { PADS, padColor } from "../scripts/pads";
     position: relative;
     aspect-ratio: 1;
     border: none;
-    border-radius: 1rem;
+    border-radius: 0.8rem;
     background: linear-gradient(160deg, var(--pad), color-mix(in srgb, var(--pad) 60%, black));
     color: #fff;
     font-family: system-ui, sans-serif;
@@ -359,25 +495,25 @@ import { PADS, padColor } from "../scripts/pads";
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.35rem;
-    box-shadow: 0 0.25rem 0 color-mix(in srgb, var(--pad) 45%, black), 0 0.5rem 1rem rgba(0, 0, 0, 0.4);
+    gap: 0.3rem;
+    box-shadow: 0 0.2rem 0 color-mix(in srgb, var(--pad) 45%, black), 0 0.4rem 0.8rem rgba(0, 0, 0, 0.4);
     transition: transform 0.05s ease, box-shadow 0.05s ease;
     touch-action: manipulation;
   }
 
   .pad .label {
-    font-size: clamp(0.65rem, 1.6vw, 0.95rem);
+    font-size: clamp(0.6rem, 1.3vw, 0.85rem);
     letter-spacing: 0.02em;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
     text-align: center;
   }
 
   .pad .key {
-    font-size: clamp(0.55rem, 1.1vw, 0.7rem);
+    font-size: clamp(0.5rem, 0.9vw, 0.65rem);
     opacity: 0.85;
     border: 1px solid rgba(255, 255, 255, 0.6);
     border-radius: 0.3rem;
-    padding: 0 0.35rem;
+    padding: 0 0.3rem;
   }
 
   .pad:active,
@@ -391,34 +527,19 @@ import { PADS, padColor } from "../scripts/pads";
     outline-offset: 2px;
   }
 
-  /* --- mixer strip --- */
-  .mixer {
-    margin-top: 1.25rem;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1.5rem;
-    padding: 0.9rem 1.1rem;
-    border-radius: 0.75rem;
+  /* --- per-deck channel strip --- */
+  .channel-strip {
+    padding: 0.75rem;
+    border-radius: 0.6rem;
     background: linear-gradient(180deg, #1c1c22, #0f0f12);
     border: 1px solid #000;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  }
-
-  .mixer-section {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-  }
-
-  .mixer-section-channel {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.4rem;
   }
 
   .faders {
     display: flex;
-    gap: 1.25rem;
+    gap: 0.9rem;
+    margin-top: 0.5rem;
+    flex-wrap: wrap;
   }
 
   .fader-group {
@@ -426,22 +547,22 @@ import { PADS, padColor } from "../scripts/pads";
     flex-direction: column;
     align-items: center;
     gap: 0.3rem;
-    font-size: 0.7rem;
+    font-size: 0.65rem;
     color: #9a9aa4;
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
 
   .fader-track {
-    width: 2.4rem;
-    height: 6rem;
+    width: 2rem;
+    height: 5rem;
     display: flex;
     align-items: center;
     justify-content: center;
   }
 
   .fader-track input[type="range"] {
-    width: 6rem;
+    width: 5rem;
     transform: rotate(-90deg);
     accent-color: #ff8c1a;
   }
@@ -457,13 +578,54 @@ import { PADS, padColor } from "../scripts/pads";
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: #7a7a85;
-    min-width: 3.5rem;
+  }
+
+  /* --- centre console: crossfader + shared transport --- */
+  .center-console {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 0.75rem;
+    border-radius: 0.9rem;
+    background: linear-gradient(180deg, #1c1c22, #131316);
+    border: 1px solid #000;
+    align-items: stretch;
+  }
+
+  .crossfader-unit {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .crossfader-unit input[type="range"] {
+    width: 100%;
+    accent-color: #ff8c1a;
+  }
+
+  .crossfader-labels {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    font-family: ui-monospace, monospace;
+    font-size: 0.75rem;
+    color: #7a7a85;
+  }
+
+  .mixer-section {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.4rem;
   }
 
   .mixer-btn {
     display: flex;
     align-items: center;
     gap: 0.45rem;
+    width: 100%;
     background: linear-gradient(180deg, #333339, #202024);
     color: #eaeaef;
     border: 1px solid #000;
@@ -533,6 +695,149 @@ import { PADS, padColor } from "../scripts/pads";
     font-family: ui-monospace, monospace;
     font-size: 0.8rem;
     color: #7a7a85;
+  }
+
+  /* --- step sequencer --- */
+  .sequencer {
+    margin-top: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.9rem 1.1rem;
+    border-radius: 0.75rem;
+    background: linear-gradient(180deg, #1c1c22, #0f0f12);
+    border: 1px solid #000;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+
+  .seq-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .seq-row {
+    display: grid;
+    grid-template-columns: 8rem 1fr 1.75rem;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  .seq-sound {
+    width: 100%;
+    background: #232329;
+    color: #eaeaef;
+    border: 1px solid #000;
+    border-radius: 0.35rem;
+    padding: 0.3rem 0.4rem;
+    font-size: 0.75rem;
+    font-family: system-ui, sans-serif;
+  }
+
+  .seq-sound:focus-visible {
+    outline: 2px solid #6fa8ff;
+    outline-offset: 1px;
+  }
+
+  .seq-steps {
+    display: grid;
+    grid-template-columns: repeat(16, 1fr);
+    gap: 0.3rem;
+  }
+
+  @media (max-width: 30rem) {
+    .seq-row {
+      grid-template-columns: 1fr 1.75rem;
+      grid-template-areas: "sound remove" "steps steps";
+      row-gap: 0.4rem;
+    }
+
+    .seq-sound {
+      grid-area: sound;
+    }
+
+    .seq-remove {
+      grid-area: remove;
+    }
+
+    .seq-steps {
+      grid-area: steps;
+    }
+  }
+
+  .seq-remove {
+    width: 1.75rem;
+    aspect-ratio: 1;
+    border-radius: 0.35rem;
+    border: 1px solid #000;
+    background: linear-gradient(180deg, #333339, #202024);
+    color: #c9c9d2;
+    cursor: pointer;
+    font-size: 0.75rem;
+    line-height: 1;
+  }
+
+  .seq-remove:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+
+  .seq-remove:focus-visible {
+    outline: 2px solid #6fa8ff;
+    outline-offset: 1px;
+  }
+
+  .seq-add-btn {
+    align-self: flex-start;
+    margin-top: 0.7rem;
+    background: linear-gradient(180deg, #333339, #202024);
+    color: #eaeaef;
+    border: 1px solid #000;
+    border-radius: 0.4rem;
+    padding: 0.4rem 0.9rem;
+    font-family: system-ui, sans-serif;
+    font-weight: 600;
+    font-size: 0.75rem;
+    cursor: pointer;
+  }
+
+  .seq-add-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .seq-add-btn:focus-visible {
+    outline: 3px solid #fff;
+    outline-offset: 2px;
+  }
+
+  .step-btn {
+    aspect-ratio: 1;
+    min-width: 0;
+    border-radius: 0.3rem;
+    border: 1px solid #000;
+    background: #232329;
+    cursor: pointer;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  .step-btn.beat {
+    background: #2b2b33;
+  }
+
+  .step-btn[aria-pressed="true"] {
+    background: #ff8c1a;
+    box-shadow: 0 0 0.4rem rgba(255, 140, 26, 0.6);
+  }
+
+  .step-btn.current {
+    outline: 2px solid #fff;
+    outline-offset: 1px;
+  }
+
+  .step-btn:focus-visible {
+    outline: 2px solid #6fa8ff;
+    outline-offset: 1px;
   }
 
   .status {
