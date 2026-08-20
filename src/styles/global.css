@@ -3,7 +3,8 @@ body {
   padding: 2rem;
   font-family: system-ui, sans-serif;
   line-height: 1.6;
-  color: #1a1a1a;
+  color: #eaeaef;
+  background: #000;
 }
 
 main {
@@ -12,5 +13,5 @@ main {
 }
 
 a {
-  color: #0b5fff;
+  color: #6fa8ff;
 }
