@@ -1,9 +1,5 @@
 # Process overview
 
-<!-- TEMPLATE: this file is a shape to fill in, not a form. Replace everything
-     in it with your own overview, and delete this comment — `pnpm
-     check:evidence` will remind you if it's still here. -->
-
 A reading-guide to how the work came together --- a map to your process, not an
 essay about it. Markers read this file and follow its citations; they don't
 trawl the repo for evidence you didn't point at, so if a moment mattered, cite
@@ -17,60 +13,66 @@ cover every deliverable.
 
 ## What I built
 
-One paragraph: the thing, and the idea behind it.
+Rainbow DJ, a browser instrument built around a single deck: a jog wheel for
+scratches, a 12-pad grid of live-synthesised drum/FX hits (no samples — every
+sound is a Web Audio graph built at play time), a channel strip with
+filter/delay/reverb sends, and an editable multi-track step sequencer that can
+drive the same pads.
 
 ## The moments that mattered
 
-Three or four for an assignment; fewer is fine for a weekly prototype. Keep the
-list short so each moment has room to do all four jobs:
+1. **Dynamically-added sequencer rows rendered unstyled.** Clicking "+ Add
+   track" produced a row that looked nothing like the ones in the markup —
+   plain native `<select>` and buttons, no bevel, no grid layout. Instead of
+   patching styles onto the created elements from `main.ts`, I checked the
+   compiled `dist/_astro/*.css` and found the cause: Astro scopes `<style>`
+   selectors to an auto-generated `data-astro-cid-*` attribute that's only
+   stamped onto elements present in the server-rendered template, so anything
+   built later with `document.createElement` never matches those selectors. I
+   wrapped the row-level selectors in `:global(...)` instead of duplicating
+   styles in TypeScript, so the CSS stays the single source of truth for what
+   a track row looks like
+   ([`146f5b8`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit4-soybeaam/commit/146f5b8)).
+   I confirmed the fix by re-inspecting the built CSS output rather than just
+   eyeballing the page: the fixed selectors compiled without the
+   `data-astro-cid` guard, while an untouched, correctly-scoped selector
+   (`.seq-rows`) still had it.
 
-1. **what happened** --- the problem, or the thing that went wrong
-2. **what you did instead of the obvious thing** --- the call you made, and why
-   it beat the obvious one
-3. **how you knew it was right** --- the check you ran, the viewport you looked
-   at, what you read before accepting the diff
-4. **the citation** --- a commit or commit range, a `CLAUDE.md` change, a check
-   that went from red to green, a prompt paired with the commit it produced
+2. **Two decks turned out to be one deck's worth of scope.** Asked to drop a
+   deck, I stopped before touching the crossfader, keyboard shortcuts, and CSS
+   grid it implied and asked which of "hide deck B" vs. "remove it entirely"
+   was wanted, since the two land at completely different amounts of surface
+   area. Once "remove it" was confirmed, I grepped `spec/*.test.ts` for any
+   reference to "deck" before deleting anything, so the refactor wasn't
+   guessing at a hidden contract
+   ([`f24d319`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit4-soybeaam/commit/f24d319)).
+   `pnpm check` stayed green through the removal of `DeckId`, the crossfader
+   wiring, and the per-deck audio routing, which is what told me nothing else
+   in the app was silently depending on deck B.
 
-Jobs 2 and 3 are the ones the repo can't tell a reader on its own, so they're
-where the marks are. The strongest moments are the ones where a correction
-landed in the **harness** --- the standards and checks your work has to satisfy
---- rather than in a retry: a rule added to `CLAUDE.md`, a check wired up, an
-attempt thrown away. Retrying until it passes is the routine case, and changing
-what the work runs against is the skilled one.
+3. **A canvas that only sometimes filled its box.** The visualiser's backing
+   buffer was sized once from `canvas.clientWidth`/`clientHeight` at script
+   load, so a layout that settled after that point (or a later viewport
+   resize) left the buffer stale relative to what was actually on screen —
+   exactly the kind of bug that "looks fine on my screen" but is real.
+   Rather than re-measuring on a timer, I wired a `ResizeObserver` to
+   recompute the CSS size, backing-buffer size and device-pixel-ratio
+   transform whenever the element's box actually changes
+   ([`f24d319`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit4-soybeaam/commit/f24d319)),
+   which is the check that this class of bug can't recur without someone
+   removing the observer.
 
-Cite each moment as a link whose text is the commit hash or range and whose
-target is this repo's commit or compare URL, so a reader clicks straight to the
-evidence:
-
-- one commit: [`a1b2c3d`](https://github.com/YOUR-ORG/YOUR-REPO/commit/a1b2c3d)
-- a range:
-  [`a1b2c3d...e4f5a6b`](https://github.com/YOUR-ORG/YOUR-REPO/compare/a1b2c3d...e4f5a6b)
-
-To pair a prompt with the commit it produced, quote the prompt (curated, not a
-full transcript) next to the citation:
-
-> the prompt, verbatim
-
-Screenshots are welcome where one carries the verification better than a
-sentence does. Commit the file to this repo and link it with a **relative**
-path, which is what makes it render on GitHub: `![alt text](docs/before.png)`.
-Images don't count towards the word count and don't replace the citation.
-
-### A worked moment, for shape
-
-Delete this section along with the rest of the boilerplate --- it's here to show
-the four jobs in one paragraph, not to be imitated in content.
-
-> The date formatter kept coming back with `toLocaleDateString()` and no locale
-> argument, so the same build rendered differently on my machine and in CI. I'd
-> already re-prompted it twice, which fixed the line but not the habit, so the
-> third time I put the rule in `CLAUDE.md` instead
-> ([`3f9ac21`](https://github.com/YOUR-ORG/YOUR-REPO/commit/3f9ac21)) and added
-> a spec test that fails on a bare `toLocaleDateString`. That's what told me it
-> had actually taken: the test went red against the old code and green against
-> the new, and the next two features it wrote passed it without prompting
-> ([`3f9ac21...b7e0d14`](https://github.com/YOUR-ORG/YOUR-REPO/compare/3f9ac21...b7e0d14)).
+4. **Retiring four pad sounds without breaking the sequencer's assumptions.**
+   `pads.ts` is the single source of truth the sequencer's sound picker
+   (`SEQ_SOUNDS`) derives from, so swapping horn/siren/riser/wobble for
+   crash/cowbell/tomroll/rimshot only needed edits in one array plus the
+   matching synthesis functions in `main.ts` — I grepped for the old ids
+   across `src/` first to make sure nothing else hard-coded them before
+   relying on that
+   ([`f24d319`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit4-soybeaam/commit/f24d319)).
+   `pnpm check` catches a stale reference here as a type error (`PadId` is
+   derived from the array), which is what let me trust the rename instead of
+   manually re-checking every call site.
 
 ## Before you ship
 
