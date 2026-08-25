@@ -7,6 +7,7 @@ body {
   background: #000;
 }
 
+header,
 main {
   max-width: 40rem;
   margin: 0 auto;

@@ -2,7 +2,6 @@
 import Layout from "../layouts/Layout.astro";
 import { PADS, padColor, SEQ_SOUNDS } from "../scripts/pads";
 
-const DECKS = ["a", "b"] as const;
 const SEQ_STEPS = 16;
 const DEFAULT_PATTERN: Record<"kick" | "snare" | "hat", number[]> = {
   kick: [0, 4, 8, 12],
@@ -14,7 +13,7 @@ const SEQ_ROWS = ["kick", "snare", "hat"] as const;
 
 <Layout
   title="Rainbow DJ"
-  description="A browser DJ set — two decks with jog platters and FX, a crossfader, an editable step sequencer, a recorder, and twelve coloured pads of live synthesised sound per deck."
+  description="A browser DJ deck with a jog platter and FX, an editable step sequencer, a recorder, and twelve coloured pads of live synthesised sound."
 >
   <header>
     <nav aria-label="Primary">
@@ -24,9 +23,8 @@ const SEQ_ROWS = ["kick", "snare", "hat"] as const;
   <main>
     <h1>Rainbow DJ</h1>
     <p class="hint">
-      Deck A plays on the number/symbol row; hold <kbd>Shift</kbd> for the same
-      keys on Deck B. Spin a jog wheel, dial in filter/delay/reverb per deck,
-      ride the crossfader, tap out a pattern on the sequencer — add tracks and
+      Play pads on the number/symbol row. Spin the jog wheel, dial in
+      filter/delay/reverb, tap out a pattern on the sequencer — add tracks and
       change what each one plays — or record a pad loop and let Play beat
       play it back. Every sound is made live — no two hits quite the same.
     </p>
@@ -35,164 +33,100 @@ const SEQ_ROWS = ["kick", "snare", "hat"] as const;
       <canvas id="viz" width="900" height="140" aria-hidden="true"></canvas>
 
       <div class="decks">
-        {
-          DECKS.map((id) => (
-            <section class="deck-unit" style={`order: ${id === "a" ? 1 : 3};`} aria-label={`Deck ${id.toUpperCase()}`}>
-              <div class="turntable-unit">
+        <section class="deck-unit" aria-label="Deck">
+          <div class="turntable-row">
+            <div class="turntable-unit">
+              <button type="button" id="jog-a" class="jog" aria-label="Jog wheel — plays a random scratch move">
+                <span class="jog-platter">
+                  <span class="jog-grip" />
+                  <span class="jog-marker" />
+                  <span class="jog-hub">DJ</span>
+                </span>
+              </button>
+              <p class="unit-caption">Scratch it</p>
+            </div>
+
+            <div class="deck" data-deck="a" role="group" aria-label="Pads">
+              {PADS.map((pad) => (
                 <button
                   type="button"
-                  id={`jog-${id}`}
-                  class="jog"
-                  aria-label={`Deck ${id.toUpperCase()} jog wheel — plays a random scratch move`}
+                  class="pad"
+                  data-deck="a"
+                  data-sound={pad.id}
+                  data-code={pad.code}
+                  style={`--pad: ${padColor(pad.hue)};`}
                 >
-                  <span class="jog-platter">
-                    <span class="jog-grip" />
-                    <span class="jog-marker" />
-                    <span class="jog-hub">{id.toUpperCase()}</span>
-                  </span>
+                  <span class="label">{pad.label}</span>
+                  <span class="key">{pad.key}</span>
                 </button>
-                <p class="unit-caption">Deck {id.toUpperCase()} — scratch it</p>
-              </div>
-
-              <div class="deck" data-deck={id} role="group" aria-label={`Deck ${id.toUpperCase()} pads`}>
-                {PADS.map((pad) => (
-                  <button
-                    type="button"
-                    class="pad"
-                    data-deck={id}
-                    data-sound={pad.id}
-                    data-code={pad.code}
-                    style={`--pad: ${padColor(pad.hue)};`}
-                  >
-                    <span class="label">{pad.label}</span>
-                    <span class="key">{id === "a" ? pad.key : `⇧${pad.key}`}</span>
-                  </button>
-                ))}
-              </div>
-
-              <div class="channel-strip" role="group" aria-label={`Deck ${id.toUpperCase()} channel`}>
-                <span class="mixer-section-title">Channel {id.toUpperCase()}</span>
-                <div class="faders">
-                  <label class="fader-group">
-                    <span class="fader-label">Vol</span>
-                    <span class="fader-track">
-                      <input
-                        type="range"
-                        id={`volume-${id}`}
-                        min="0"
-                        max="1.2"
-                        step="0.01"
-                        value="0.9"
-                        aria-label={`Deck ${id.toUpperCase()} volume`}
-                      />
-                    </span>
-                  </label>
-                  <label class="fader-group">
-                    <span class="fader-label">Pitch</span>
-                    <span class="fader-track">
-                      <input
-                        type="range"
-                        id={`pitch-${id}`}
-                        min="-8"
-                        max="8"
-                        step="1"
-                        value="0"
-                        aria-label={`Deck ${id.toUpperCase()} pitch`}
-                      />
-                    </span>
-                    <span class="fader-readout" id={`pitch-label-${id}`}>+0%</span>
-                  </label>
-                  <label class="fader-group">
-                    <span class="fader-label">Filter</span>
-                    <span class="fader-track">
-                      <input
-                        type="range"
-                        id={`filter-${id}`}
-                        min="-1"
-                        max="1"
-                        step="0.01"
-                        value="0"
-                        aria-label={`Deck ${id.toUpperCase()} filter`}
-                      />
-                    </span>
-                  </label>
-                  <label class="fader-group">
-                    <span class="fader-label">Delay</span>
-                    <span class="fader-track">
-                      <input
-                        type="range"
-                        id={`delay-${id}`}
-                        min="0"
-                        max="1"
-                        step="0.01"
-                        value="0"
-                        aria-label={`Deck ${id.toUpperCase()} delay send`}
-                      />
-                    </span>
-                  </label>
-                  <label class="fader-group">
-                    <span class="fader-label">Verb</span>
-                    <span class="fader-track">
-                      <input
-                        type="range"
-                        id={`reverb-${id}`}
-                        min="0"
-                        max="1"
-                        step="0.01"
-                        value="0"
-                        aria-label={`Deck ${id.toUpperCase()} reverb send`}
-                      />
-                    </span>
-                  </label>
-                </div>
-              </div>
-            </section>
-          ))
-        }
-
-        <div class="center-console" style="order: 2;">
-          <div class="crossfader-unit">
-            <span class="mixer-section-title">Crossfader</span>
-            <input
-              type="range"
-              id="crossfader"
-              min="0"
-              max="1"
-              step="0.01"
-              value="0.5"
-              aria-label="Crossfader between Deck A and Deck B"
-            />
-            <div class="crossfader-labels">
-              <span>A</span>
-              <span>B</span>
+              ))}
             </div>
           </div>
+        </section>
 
-          <div class="mixer-section">
-            <span class="mixer-section-title">Beats</span>
-            <button type="button" id="beats-btn" class="mixer-btn" aria-pressed="false">
-              <span class="led"></span>
-              <span class="btn-text">Play beat</span>
-            </button>
-            <button type="button" id="cue-btn" class="mixer-btn">
-              <span class="led led-red"></span>
-              <span>Cue</span>
-            </button>
-            <span class="bpm" id="bpm-label">128 BPM</span>
+        <div class="channel-strip" role="group" aria-label="Channel">
+          <span class="mixer-section-title">Channel</span>
+          <div class="faders">
+            <label class="fader-group">
+              <span class="fader-label">Vol</span>
+              <span class="fader-track">
+                <input type="range" id="volume-a" min="0" max="1.2" step="0.01" value="0.9" aria-label="Volume" />
+              </span>
+            </label>
+            <label class="fader-group">
+              <span class="fader-label">Pitch</span>
+              <span class="fader-track">
+                <input type="range" id="pitch-a" min="-8" max="8" step="1" value="0" aria-label="Pitch" />
+              </span>
+              <span class="fader-readout" id="pitch-label-a">+0%</span>
+            </label>
+            <label class="fader-group">
+              <span class="fader-label">Filter</span>
+              <span class="fader-track">
+                <input type="range" id="filter-a" min="-1" max="1" step="0.01" value="0" aria-label="Filter" />
+              </span>
+            </label>
+            <label class="fader-group">
+              <span class="fader-label">Delay</span>
+              <span class="fader-track">
+                <input type="range" id="delay-a" min="0" max="1" step="0.01" value="0" aria-label="Delay send" />
+              </span>
+            </label>
+            <label class="fader-group">
+              <span class="fader-label">Verb</span>
+              <span class="fader-track">
+                <input type="range" id="reverb-a" min="0" max="1" step="0.01" value="0" aria-label="Reverb send" />
+              </span>
+            </label>
           </div>
+        </div>
+      </div>
 
-          <div class="mixer-section">
-            <span class="mixer-section-title">Looper</span>
-            <button type="button" id="record-btn" class="mixer-btn mixer-btn-record" aria-pressed="false">
-              <span class="led led-red"></span>
-              <span class="btn-text">Record</span>
-            </button>
-            <button type="button" id="loop-play-btn" class="mixer-btn" aria-pressed="false" disabled>
-              <span class="led"></span>
-              <span>Play loop</span>
-            </button>
-            <span class="fader-readout" id="record-timer">0.0s</span>
-          </div>
+      <div class="center-console">
+        <div class="mixer-section">
+          <span class="mixer-section-title">Beats</span>
+          <button type="button" id="beats-btn" class="mixer-btn" aria-pressed="false">
+            <span class="led"></span>
+            <span class="btn-text">Play beat</span>
+          </button>
+          <button type="button" id="cue-btn" class="mixer-btn">
+            <span class="led led-red"></span>
+            <span>Cue</span>
+          </button>
+          <span class="bpm" id="bpm-label">128 BPM</span>
+        </div>
+
+        <div class="mixer-section">
+          <span class="mixer-section-title">Looper</span>
+          <button type="button" id="record-btn" class="mixer-btn mixer-btn-record" aria-pressed="false">
+            <span class="led led-red"></span>
+            <span class="btn-text">Record</span>
+          </button>
+          <button type="button" id="loop-play-btn" class="mixer-btn" aria-pressed="false" disabled>
+            <span class="led"></span>
+            <span>Play loop</span>
+          </button>
+          <span class="fader-readout" id="record-timer">0.0s</span>
         </div>
       </div>
 
@@ -237,6 +171,7 @@ const SEQ_ROWS = ["kick", "snare", "hat"] as const;
 </Layout>
 
 <style>
+  header,
   main {
     max-width: 68rem;
   }
@@ -306,10 +241,10 @@ const SEQ_ROWS = ["kick", "snare", "hat"] as const;
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
   }
 
-  /* --- two decks either side of a shared centre console --- */
+  /* --- the deck alongside a shared transport console --- */
   .decks {
     display: grid;
-    grid-template-columns: 1fr 12rem 1fr;
+    grid-template-columns: 1fr 12rem;
     gap: 1.25rem;
     align-items: stretch;
   }
@@ -330,15 +265,33 @@ const SEQ_ROWS = ["kick", "snare", "hat"] as const;
     border: 1px solid #000;
   }
 
-  .turntable-unit {
+  .turntable-row {
     display: flex;
     align-items: center;
-    gap: 0.9rem;
+    gap: 1rem;
+  }
+
+  .turntable-unit {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    flex: none;
+  }
+
+  .turntable-row .deck {
+    flex: 1;
+  }
+
+  @media (max-width: 30rem) {
+    .turntable-row {
+      flex-direction: column;
+    }
   }
 
   .jog {
     position: relative;
-    width: 5.5rem;
+    width: 8rem;
     aspect-ratio: 1;
     flex: none;
     border-radius: 50%;
@@ -417,7 +370,8 @@ const SEQ_ROWS = ["kick", "snare", "hat"] as const;
 
   .unit-caption {
     margin: 0;
-    font-size: 0.75rem;
+    font-size: 1.1rem;
+    font-weight: 600;
     color: #8a8a95;
     letter-spacing: 0.03em;
     text-transform: uppercase;
@@ -580,52 +534,43 @@ const SEQ_ROWS = ["kick", "snare", "hat"] as const;
     color: #7a7a85;
   }
 
-  /* --- centre console: crossfader + shared transport --- */
+  /* --- shared transport console: beats + looper, a horizontal bar spanning
+     the full width between the deck row and the sequencer --- */
   .center-console {
     display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    gap: 1rem;
-    padding: 1rem 0.75rem;
+    flex-direction: row;
+    justify-content: center;
+    gap: 2.5rem;
+    margin-top: 1rem;
+    padding: 0.85rem 1.25rem;
     border-radius: 0.9rem;
     background: linear-gradient(180deg, #1c1c22, #131316);
     border: 1px solid #000;
     align-items: stretch;
   }
 
-  .crossfader-unit {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.35rem;
-  }
-
-  .crossfader-unit input[type="range"] {
-    width: 100%;
-    accent-color: #ff8c1a;
-  }
-
-  .crossfader-labels {
-    display: flex;
-    justify-content: space-between;
-    width: 100%;
-    font-family: ui-monospace, monospace;
-    font-size: 0.75rem;
-    color: #7a7a85;
-  }
-
   .mixer-section {
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.4rem;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  @media (max-width: 40rem) {
+    .center-console {
+      flex-direction: column;
+    }
+
+    .mixer-section {
+      justify-content: center;
+    }
   }
 
   .mixer-btn {
     display: flex;
     align-items: center;
     gap: 0.45rem;
-    width: 100%;
+    width: auto;
     background: linear-gradient(180deg, #333339, #202024);
     color: #eaeaef;
     border: 1px solid #000;
@@ -699,7 +644,7 @@ const SEQ_ROWS = ["kick", "snare", "hat"] as const;
 
   /* --- step sequencer --- */
   .sequencer {
-    margin-top: 1.25rem;
+    margin-top: 0.75rem;
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
@@ -774,23 +719,29 @@ const SEQ_ROWS = ["kick", "snare", "hat"] as const;
   :global(.seq-remove) {
     width: 1.75rem;
     aspect-ratio: 1;
-    border-radius: 0.35rem;
+    border-radius: 0.5rem;
     border: 1px solid #000;
     background: linear-gradient(180deg, #333339, #202024);
     color: #c9c9d2;
     cursor: pointer;
     font-size: 0.75rem;
     line-height: 1;
+    box-shadow: 0 0.15rem 0 #000, inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 
   :global(.seq-remove:disabled) {
-    opacity: 0.3;
+    opacity: 0.4;
     cursor: not-allowed;
   }
 
+  :global(.seq-remove:active:not(:disabled)) {
+    transform: translateY(0.1rem);
+    box-shadow: 0 0.05rem 0 #000, inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
   :global(.seq-remove:focus-visible) {
-    outline: 2px solid #6fa8ff;
-    outline-offset: 1px;
+    outline: 3px solid #fff;
+    outline-offset: 2px;
   }
 
   .seq-add-btn {
@@ -798,18 +749,24 @@ const SEQ_ROWS = ["kick", "snare", "hat"] as const;
     margin-top: 0.2rem;
     background: linear-gradient(180deg, #333339, #202024);
     color: #eaeaef;
-    border: 1px dashed #55555f;
-    border-radius: 0.35rem;
-    padding: 0.4rem 0.9rem;
+    border: 1px solid #000;
+    border-radius: 0.5rem;
+    padding: 0.5rem 0.8rem;
     font-family: system-ui, sans-serif;
     font-weight: 600;
-    font-size: 0.75rem;
+    font-size: 0.85rem;
     cursor: pointer;
+    box-shadow: 0 0.15rem 0 #000, inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 
   .seq-add-btn:disabled {
     opacity: 0.4;
     cursor: not-allowed;
+  }
+
+  .seq-add-btn:active:not(:disabled) {
+    transform: translateY(0.1rem);
+    box-shadow: 0 0.05rem 0 #000, inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 
   .seq-add-btn:focus-visible {

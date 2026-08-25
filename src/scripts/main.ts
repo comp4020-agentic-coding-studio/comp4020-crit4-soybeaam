@@ -1,15 +1,13 @@
-// Rainbow DJ: two decks, each with a jog platter, twelve live-synthesised
-// pads and its own channel strip (volume/pitch/filter/delay/reverb), blended
-// through a crossfader; a shared 16-step editable sequencer; a cue button; a
-// recorder; and a canvas visualiser driven by an AnalyserNode. Nothing is
-// pre-recorded — every sound is built from oscillators and noise at the
-// moment it's played.
+// Rainbow DJ: one deck with a jog platter, twelve live-synthesised pads and a
+// channel strip (volume/pitch/filter/delay/reverb); a shared 16-step editable
+// sequencer; a cue button; a recorder; and a canvas visualiser driven by an
+// AnalyserNode. Nothing is pre-recorded — every sound is built from
+// oscillators and noise at the moment it's played.
 
 import { PADS, padColor, SEQ_SOUNDS } from "./pads";
-import { createDeckBus, makeDriveCurve, panNode, type DeckBus } from "./fx";
+import { createDeckBus, panNode, type DeckBus } from "./fx";
 
 type PadId = (typeof PADS)[number]["id"];
-type DeckId = "a" | "b";
 type GlowSource = PadId | "jog";
 
 const HUES: Record<PadId, number> = Object.fromEntries(PADS.map((p) => [p.id, p.hue])) as Record<
@@ -35,35 +33,22 @@ let analyser: AnalyserNode | null = null;
 let master: GainNode | null = null;
 let noiseBuffer: AudioBuffer | null = null;
 
-// --- per-deck state, kept alive even before the AudioContext exists so
-// sliders touched pre-gesture are honoured the moment audio() creates the buses ---
+// --- deck state, kept alive even before the AudioContext exists so sliders
+// touched pre-gesture are honoured the moment audio() creates the bus ---
 let deckA: DeckBus | null = null;
-let deckB: DeckBus | null = null;
-let deckAVolume = 0.9,
-  deckBVolume = 0.9;
-let deckAPitch = 1,
-  deckBPitch = 1;
-let deckAFilter = 0,
-  deckBFilter = 0;
-let deckADelay = 0,
-  deckBDelay = 0;
-let deckAReverb = 0,
-  deckBReverb = 0;
-let crossfaderValue = 0.5;
+let deckAVolume = 0.9;
+let deckAPitch = 1;
+let deckAFilter = 0;
+let deckADelay = 0;
+let deckAReverb = 0;
 
-function busFor(deckId: DeckId): AudioNode {
+function bus(): AudioNode {
   audio();
-  return deckId === "a" ? deckA!.input : deckB!.input;
+  return deckA!.input;
 }
 
-function pitchFor(deckId: DeckId): number {
-  return deckId === "a" ? deckAPitch : deckBPitch;
-}
-
-function applyCrossfader(value: number) {
-  const angle = value * (Math.PI / 2);
-  deckA?.setCrossfade(Math.cos(angle));
-  deckB?.setCrossfade(Math.sin(angle));
+function pitch(): number {
+  return deckAPitch;
 }
 
 function audio(): AudioContext {
@@ -77,16 +62,11 @@ function audio(): AudioContext {
     analyser.connect(ctx.destination);
 
     deckA = createDeckBus(ctx, master);
-    deckB = createDeckBus(ctx, master);
     deckA.setVolume(deckAVolume);
-    deckB.setVolume(deckBVolume);
     deckA.setFilter(deckAFilter);
-    deckB.setFilter(deckBFilter);
     deckA.setDelaySend(deckADelay);
-    deckB.setDelaySend(deckBDelay);
     deckA.setReverbSend(deckAReverb);
-    deckB.setReverbSend(deckBReverb);
-    applyCrossfader(crossfaderValue);
+    deckA.setCrossfade(1);
   }
   if (ctx.state === "suspended") ctx.resume();
   return ctx;
@@ -118,56 +98,45 @@ function noiseSource(): AudioBufferSourceNode {
 // with the calling deck's pitch fader, matching turntable vari-speed.
 const jitter = (spread: number) => 1 + (Math.random() - 0.5) * spread;
 
-function playHorn(destination: AudioNode, pitchRatio: number, startTime?: number) {
+function playCrash(destination: AudioNode, pitchRatio: number, startTime?: number) {
   const c = audio();
   const now = startTime ?? c.currentTime;
+  const dur = 1.4;
+  const src = noiseSource();
+  const filter = c.createBiquadFilter();
+  filter.type = "highpass";
+  filter.frequency.value = 5000 * pitchRatio;
+  const shimmer = c.createBiquadFilter();
+  shimmer.type = "peaking";
+  shimmer.frequency.value = 9000 * pitchRatio;
+  shimmer.Q.value = 1.2;
+  shimmer.gain.value = 8;
   const gain = c.createGain();
-  const pan = panNode(c);
-  gain.connect(pan).connect(destination);
-  gain.gain.setValueAtTime(0, now);
-  gain.gain.linearRampToValueAtTime(0.8, now + 0.02);
-  gain.gain.setValueAtTime(0.8, now + 0.5);
-  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.9);
-
-  const base = 233 * jitter(0.03) * pitchRatio; // Bb3-ish air-horn stab
-  for (const ratio of [1, 1.5, 2]) {
-    for (const detune of [-4, 4]) {
-      const osc = c.createOscillator();
-      osc.type = "sawtooth";
-      osc.frequency.value = base * ratio;
-      osc.detune.value = detune;
-      osc.connect(gain);
-      osc.start(now);
-      osc.stop(now + 0.95);
-    }
-  }
+  const pan = panNode(c, 0.2);
+  gain.gain.setValueAtTime(0.6 * jitter(0.1), now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+  src.connect(filter).connect(shimmer).connect(gain).connect(pan).connect(destination);
+  src.start(now);
+  src.stop(now + dur + 0.1);
 }
 
-function playSiren(destination: AudioNode, pitchRatio: number, startTime?: number) {
+function playCowbell(destination: AudioNode, pitchRatio: number, startTime?: number) {
   const c = audio();
   const now = startTime ?? c.currentTime;
+  const dur = 0.35;
   const gain = c.createGain();
   const pan = panNode(c);
   gain.connect(pan).connect(destination);
-  gain.gain.setValueAtTime(0, now);
-  gain.gain.linearRampToValueAtTime(0.6, now + 0.05);
-  gain.gain.setValueAtTime(0.6, now + 1.3);
-  gain.gain.linearRampToValueAtTime(0, now + 1.5);
+  gain.gain.setValueAtTime(0.7, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
 
-  const lo = 500 * jitter(0.05) * pitchRatio;
-  const hi = 1000 * jitter(0.05) * pitchRatio;
-  for (const detune of [-6, 6]) {
+  for (const freq of [540, 800]) {
     const osc = c.createOscillator();
-    osc.type = "sine";
-    osc.detune.value = detune;
-    osc.frequency.setValueAtTime(lo, now);
-    for (let i = 0; i < 4; i++) {
-      osc.frequency.linearRampToValueAtTime(hi, now + 0.2 + i * 0.35);
-      osc.frequency.linearRampToValueAtTime(lo, now + 0.35 + i * 0.35);
-    }
+    osc.type = "square";
+    osc.frequency.value = freq * jitter(0.02) * pitchRatio;
     osc.connect(gain);
     osc.start(now);
-    osc.stop(now + 1.5);
+    osc.stop(now + dur + 0.02);
   }
 }
 
@@ -199,35 +168,31 @@ function playLaser(destination: AudioNode, pitchRatio: number, startTime?: numbe
   sub.stop(now + 0.3);
 }
 
-function playRiser(destination: AudioNode, startTime?: number) {
+function playTomRoll(destination: AudioNode, startTime?: number) {
   const c = audio();
   const now = startTime ?? c.currentTime;
-  const dur = 1.1;
-  const src = noiseSource();
-  const filter = c.createBiquadFilter();
-  filter.type = "bandpass";
-  filter.Q.value = 0.8;
-  filter.frequency.setValueAtTime(200, now);
-  filter.frequency.exponentialRampToValueAtTime(6000, now + dur);
-
-  const gain = c.createGain();
-  gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.exponentialRampToValueAtTime(0.7 * jitter(0.1), now + dur);
-  gain.gain.linearRampToValueAtTime(0, now + dur + 0.08);
-
-  // an auto-panning LFO sweeps the riser across the stereo field as it climbs
+  const hits = 6;
+  const spacing = 0.09;
   const pan = c.createStereoPanner();
-  const panLfo = c.createOscillator();
-  panLfo.frequency.value = 0.6;
-  const panLfoGain = c.createGain();
-  panLfoGain.gain.value = 0.7;
-  panLfo.connect(panLfoGain).connect(pan.pan);
-  panLfo.start(now);
-  panLfo.stop(now + dur + 0.1);
+  pan.connect(destination);
 
-  src.connect(filter).connect(gain).connect(pan).connect(destination);
-  src.start(now);
-  src.stop(now + dur + 0.1);
+  for (let i = 0; i < hits; i++) {
+    const t = now + i * spacing;
+    const gain = c.createGain();
+    gain.connect(pan);
+    const level = 0.7 * (0.55 + 0.45 * (i / (hits - 1)));
+    gain.gain.setValueAtTime(level, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + spacing * 0.9);
+
+    const osc = c.createOscillator();
+    osc.type = "sine";
+    const base = 140 * jitter(0.04);
+    osc.frequency.setValueAtTime(base, t);
+    osc.frequency.exponentialRampToValueAtTime(base * 0.55, t + spacing * 0.85);
+    osc.connect(gain);
+    osc.start(t);
+    osc.stop(t + spacing);
+  }
 }
 
 function playDrop(destination: AudioNode, pitchRatio: number, startTime?: number) {
@@ -430,42 +395,34 @@ function playStab(destination: AudioNode, pitchRatio: number, startTime?: number
   }
 }
 
-function playWobble(destination: AudioNode, pitchRatio: number, startTime?: number) {
+function playRimshot(destination: AudioNode, pitchRatio: number, startTime?: number) {
   const c = audio();
   const now = startTime ?? c.currentTime;
-  const dur = 0.9;
+  const pan = panNode(c, 0.1);
+  pan.connect(destination);
 
   const osc = c.createOscillator();
-  osc.type = "sawtooth";
-  osc.frequency.value = 65 * pitchRatio;
-
-  const filter = c.createBiquadFilter();
-  filter.type = "lowpass";
-  filter.Q.value = 8;
-  filter.frequency.value = 600;
-
-  const lfo = c.createOscillator();
-  lfo.type = "sine";
-  lfo.frequency.value = 6;
-  const lfoGain = c.createGain();
-  lfoGain.gain.value = 800;
-  lfo.connect(lfoGain).connect(filter.frequency);
-
-  const drive = c.createWaveShaper();
-  drive.curve = makeDriveCurve(16);
-  drive.oversample = "2x";
-
-  const gain = c.createGain();
-  const pan = panNode(c, 0.15);
-  gain.gain.setValueAtTime(0.7, now);
-  gain.gain.setValueAtTime(0.7, now + dur - 0.1);
-  gain.gain.linearRampToValueAtTime(0, now + dur);
-
-  osc.connect(filter).connect(drive).connect(gain).connect(pan).connect(destination);
+  osc.type = "square";
+  osc.frequency.setValueAtTime(1400 * pitchRatio * jitter(0.03), now);
+  osc.frequency.exponentialRampToValueAtTime(280 * pitchRatio, now + 0.05);
+  const toneGain = c.createGain();
+  toneGain.gain.setValueAtTime(0.6, now);
+  toneGain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+  osc.connect(toneGain).connect(pan);
   osc.start(now);
-  lfo.start(now);
-  osc.stop(now + dur + 0.05);
-  lfo.stop(now + dur + 0.05);
+  osc.stop(now + 0.07);
+
+  const src = noiseSource();
+  const filter = c.createBiquadFilter();
+  filter.type = "bandpass";
+  filter.frequency.value = 2200;
+  filter.Q.value = 3;
+  const noiseGain = c.createGain();
+  noiseGain.gain.setValueAtTime(0.35, now);
+  noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+  src.connect(filter).connect(noiseGain).connect(pan);
+  src.start(now);
+  src.stop(now + 0.05);
 }
 
 // The sequencer's own two voices — not pad sounds, always routed straight to
@@ -503,10 +460,10 @@ function playHat(startTime?: number) {
 }
 
 const SOUNDS: Record<PadId, (destination: AudioNode, pitchRatio: number, startTime?: number) => void> = {
-  horn: playHorn,
-  siren: playSiren,
+  crash: playCrash,
+  cowbell: playCowbell,
   laser: playLaser,
-  riser: (d, _p, t) => playRiser(d, t),
+  tomroll: (d, _p, t) => playTomRoll(d, t),
   drop: playDrop,
   vinylstop: playVinylStop,
   reverse: (d, _p, t) => playReverse(d, t),
@@ -514,30 +471,23 @@ const SOUNDS: Record<PadId, (destination: AudioNode, pitchRatio: number, startTi
   clap: (d, _p, t) => playClap(d, t),
   hatroll: (d, _p, t) => playHatRoll(d, t),
   stab: playStab,
-  wobble: playWobble,
+  rimshot: playRimshot,
 };
-
-let glow: GlowSource | null = null;
-let glowUntil = 0;
 
 function trigger(pad: HTMLButtonElement, opts: { announce?: boolean } = {}) {
   const { announce = true } = opts;
   const sound = pad.dataset.sound as PadId | undefined;
-  const deckId = (pad.dataset.deck as DeckId | undefined) ?? "a";
   if (!sound) return;
-  SOUNDS[sound](busFor(deckId), pitchFor(deckId));
+  SOUNDS[sound](bus(), pitch());
 
   pad.classList.add("hit");
   setTimeout(() => pad.classList.remove("hit"), 140);
 
-  glow = sound;
-  glowUntil = performance.now() + 900;
-
   if (announce && statusEl) {
-    statusEl.textContent = `Playing: ${LABELS[sound]} (Deck ${deckId.toUpperCase()})`;
+    statusEl.textContent = `Playing: ${LABELS[sound]}`;
   }
 
-  if (recording) recordedHits.push({ deck: deckId, sound, t: performance.now() - recordStart });
+  if (recording) recordedHits.push({ sound, t: performance.now() - recordStart });
 }
 
 for (const pad of pads) {
@@ -551,88 +501,62 @@ for (const pad of pads) {
   });
 }
 
-// Deck A fires on the bare number/symbol row; Deck B fires on the same keys
-// held with Shift. Matched on e.code (not e.key) so Shift changing the
+// Matched on e.code (not e.key) so Shift/other modifiers changing the
 // character a key produces doesn't break the shortcut.
 document.addEventListener("keydown", (e) => {
   if (e.repeat || e.ctrlKey || e.altKey || e.metaKey) return;
-  const deckId: DeckId = e.shiftKey ? "b" : "a";
-  const pad = pads.find((p) => p.dataset.code === e.code && p.dataset.deck === deckId);
+  const pad = pads.find((p) => p.dataset.code === e.code);
   if (pad && document.activeElement !== pad) trigger(pad);
 });
 
-// --- jog platters: click, tap or Enter/Space plays a random scratch move ---
-function wireJog(id: string, deckId: DeckId) {
-  const jog = document.getElementById(id) as HTMLButtonElement | null;
-  jog?.addEventListener("click", () => {
-    playScratch(busFor(deckId));
-    jog.classList.remove("scratching");
-    void jog.offsetWidth; // restart the wobble animation on repeat hits
-    jog.classList.add("scratching");
-    setTimeout(() => jog.classList.remove("scratching"), 600);
+// --- jog platter: click, tap or Enter/Space plays a random scratch move ---
+const jog = document.getElementById("jog-a") as HTMLButtonElement | null;
+jog?.addEventListener("click", () => {
+  playScratch(bus());
+  jog.classList.remove("scratching");
+  void jog.offsetWidth; // restart the wobble animation on repeat hits
+  jog.classList.add("scratching");
+  setTimeout(() => jog.classList.remove("scratching"), 600);
 
-    glow = "jog";
-    glowUntil = performance.now() + 900;
-    if (statusEl) statusEl.textContent = `Spun deck ${deckId.toUpperCase()}'s jog wheel — scratching.`;
-  });
-}
-wireJog("jog-a", "a");
-wireJog("jog-b", "b");
+  if (statusEl) statusEl.textContent = "Spun the jog wheel — scratching.";
+});
 
-// --- per-deck channel strips: volume, pitch, filter, delay send, reverb send ---
-function wireChannel(deckId: DeckId) {
-  const bus = () => (deckId === "a" ? deckA : deckB);
-  const volumeSlider = document.getElementById(`volume-${deckId}`) as HTMLInputElement | null;
-  const pitchSlider = document.getElementById(`pitch-${deckId}`) as HTMLInputElement | null;
-  const pitchLabel = document.getElementById(`pitch-label-${deckId}`);
-  const filterSlider = document.getElementById(`filter-${deckId}`) as HTMLInputElement | null;
-  const delaySlider = document.getElementById(`delay-${deckId}`) as HTMLInputElement | null;
-  const reverbSlider = document.getElementById(`reverb-${deckId}`) as HTMLInputElement | null;
+// --- channel strip: volume, pitch, filter, delay send, reverb send ---
+const volumeSlider = document.getElementById("volume-a") as HTMLInputElement | null;
+const pitchSlider = document.getElementById("pitch-a") as HTMLInputElement | null;
+const pitchLabel = document.getElementById("pitch-label-a");
+const filterSlider = document.getElementById("filter-a") as HTMLInputElement | null;
+const delaySlider = document.getElementById("delay-a") as HTMLInputElement | null;
+const reverbSlider = document.getElementById("reverb-a") as HTMLInputElement | null;
 
-  volumeSlider?.addEventListener("input", () => {
-    const v = Number(volumeSlider.value);
-    if (deckId === "a") deckAVolume = v;
-    else deckBVolume = v;
-    bus()?.setVolume(v);
-  });
+volumeSlider?.addEventListener("input", () => {
+  const v = Number(volumeSlider.value);
+  deckAVolume = v;
+  deckA?.setVolume(v);
+});
 
-  pitchSlider?.addEventListener("input", () => {
-    const percent = Number(pitchSlider.value);
-    const ratio = 1 + percent / 100;
-    if (deckId === "a") deckAPitch = ratio;
-    else deckBPitch = ratio;
-    if (pitchLabel) pitchLabel.textContent = `${percent > 0 ? "+" : ""}${percent}%`;
-  });
+pitchSlider?.addEventListener("input", () => {
+  const percent = Number(pitchSlider.value);
+  deckAPitch = 1 + percent / 100;
+  if (pitchLabel) pitchLabel.textContent = `${percent > 0 ? "+" : ""}${percent}%`;
+});
 
-  filterSlider?.addEventListener("input", () => {
-    const v = Number(filterSlider.value);
-    if (deckId === "a") deckAFilter = v;
-    else deckBFilter = v;
-    bus()?.setFilter(v);
-  });
+filterSlider?.addEventListener("input", () => {
+  const v = Number(filterSlider.value);
+  deckAFilter = v;
+  deckA?.setFilter(v);
+});
 
-  delaySlider?.addEventListener("input", () => {
-    const v = Number(delaySlider.value);
-    if (deckId === "a") deckADelay = v;
-    else deckBDelay = v;
-    bus()?.setDelaySend(v);
-  });
+delaySlider?.addEventListener("input", () => {
+  const v = Number(delaySlider.value);
+  deckADelay = v;
+  deckA?.setDelaySend(v);
+});
 
-  reverbSlider?.addEventListener("input", () => {
-    const v = Number(reverbSlider.value);
-    if (deckId === "a") deckAReverb = v;
-    else deckBReverb = v;
-    bus()?.setReverbSend(v);
-  });
-}
-wireChannel("a");
-wireChannel("b");
-
-// --- crossfader: equal-power blend between the two decks' post-fx output ---
-const crossfaderSlider = document.getElementById("crossfader") as HTMLInputElement | null;
-crossfaderSlider?.addEventListener("input", () => {
-  crossfaderValue = Number(crossfaderSlider.value);
-  applyCrossfader(crossfaderValue);
+reverbSlider?.addEventListener("input", () => {
+  const v = Number(reverbSlider.value);
+  deckAReverb = v;
+  deckA?.setReverbSend(v);
 });
 
 // --- the sequencer: an editable, extensible set of 16-step tracks, each
@@ -845,7 +769,7 @@ const MAX_RECORD_MS = 8000;
 
 let recording = false;
 let recordStart = 0;
-let recordedHits: { deck: DeckId; sound: PadId; t: number }[] = [];
+let recordedHits: { sound: PadId; t: number }[] = [];
 let recordedDuration = 0;
 let recordStopTimer: number | null = null;
 let recordTimerInterval: number | null = null;
@@ -866,7 +790,7 @@ function stopPlayback() {
 function schedulePlaybackCycle() {
   playbackTimers = recordedHits.map((hit) =>
     window.setTimeout(() => {
-      const pad = pads.find((p) => p.dataset.sound === hit.sound && p.dataset.deck === hit.deck);
+      const pad = pads.find((p) => p.dataset.sound === hit.sound);
       if (pad) trigger(pad, { announce: false });
     }, hit.t),
   );
@@ -922,7 +846,7 @@ function startRecording() {
     const elapsed = (performance.now() - recordStart) / 1000;
     if (recordTimerEl) recordTimerEl.textContent = `${elapsed.toFixed(1)}s`;
   }, 100);
-  if (statusEl) statusEl.textContent = "Recording your loop — up to 8s of pads on either deck.";
+  if (statusEl) statusEl.textContent = "Recording your loop — up to 8s of pad hits.";
   recordStopTimer = window.setTimeout(stopRecording, MAX_RECORD_MS);
 }
 
@@ -994,16 +918,23 @@ cueBtn?.addEventListener("keyup", (e) => {
 
 updateLoopBtnAvailability();
 
-// Visualiser: a frequency-bar deck that runs continuously, rainbow-tinted,
-// with the most recently hit pad's colour (or a jog's) glowing at the centre.
+// Visualiser: a frequency-bar deck that runs continuously, rainbow-tinted.
 if (canvas) {
   const ctx2d = canvas.getContext("2d")!;
-  const dpr = window.devicePixelRatio || 1;
-  const cssWidth = canvas.clientWidth || canvas.width;
-  const cssHeight = canvas.clientHeight || canvas.height;
-  canvas.width = cssWidth * dpr;
-  canvas.height = cssHeight * dpr;
-  ctx2d.scale(dpr, dpr);
+  let cssWidth = canvas.clientWidth || canvas.width;
+  let cssHeight = canvas.clientHeight || canvas.height;
+
+  function resizeCanvas() {
+    if (!canvas) return;
+    cssWidth = canvas.clientWidth || canvas.width;
+    cssHeight = canvas.clientHeight || canvas.height;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = cssWidth * dpr;
+    canvas.height = cssHeight * dpr;
+    ctx2d.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  resizeCanvas();
+  new ResizeObserver(resizeCanvas).observe(canvas);
 
   const order: PadId[] = PADS.map((p) => p.id as PadId);
 
@@ -1032,17 +963,6 @@ if (canvas) {
       ctx2d.fillRect(i * barWidth + 1, h - height, barWidth - 2, height);
     }
     ctx2d.globalAlpha = 1;
-
-    if (glow && performance.now() < glowUntil) {
-      const remaining = (glowUntil - performance.now()) / 900;
-      ctx2d.save();
-      ctx2d.globalAlpha = remaining * 0.5;
-      ctx2d.fillStyle = colorFor(glow);
-      ctx2d.beginPath();
-      ctx2d.ellipse(w / 2, h / 2, w * 0.4 * remaining + 20, h * 0.5, 0, 0, Math.PI * 2);
-      ctx2d.fill();
-      ctx2d.restore();
-    }
 
     requestAnimationFrame(draw);
   }
